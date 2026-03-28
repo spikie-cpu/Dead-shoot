@@ -4,11 +4,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Dead Shoot</title>
 <style>
-body { margin:0; overflow:hidden; background:black; }
-#ui { position:fixed; top:10px; left:10px; color:white; font-family:sans-serif; }
+body { margin:0; overflow:hidden; background:black; font-family:sans-serif; }
+#ui { position:fixed; top:10px; left:10px; color:white; }
 #crosshair {
   position:fixed; top:50%; left:50%;
-  width:10px; height:10px; background:white;
+  width:12px; height:12px; background:white;
   transform:translate(-50%,-50%);
 }
 button {
@@ -23,7 +23,7 @@ button {
 </head>
 
 <body>
-<div id="ui">HP:100 Ammo:30 Time:60</div>
+<div id="ui">Loading...</div>
 <div id="crosshair"></div>
 
 <button id="shoot">SHOOT</button>
@@ -34,150 +34,187 @@ button {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
 <script>
+// ===== SCENE =====
 let scene = new THREE.Scene();
-scene.fog = new THREE.Fog(0x000000,10,50);
+scene.fog = new THREE.Fog(0x000000,10,60);
 
 let camera = new THREE.PerspectiveCamera(75,innerWidth/innerHeight,0.1,1000);
 let renderer = new THREE.WebGLRenderer({antialias:true});
 renderer.setSize(innerWidth,innerHeight);
 document.body.appendChild(renderer.domElement);
 
-camera.position.z = 5;
+// 🔥 กันตกแมพ
+camera.position.set(0,1.6,5);
 
-// แสง
+// ===== LIGHT =====
 let light = new THREE.PointLight(0xffffff,1);
-light.position.set(0,5,5);
+light.position.set(0,10,5);
 scene.add(light);
 
-// พื้น
+// ===== MAP =====
 let floor = new THREE.Mesh(
-  new THREE.PlaneGeometry(50,50),
+  new THREE.PlaneGeometry(100,100),
   new THREE.MeshPhongMaterial({color:0x222222})
 );
 floor.rotation.x = -Math.PI/2;
+floor.position.y = 0;
 scene.add(floor);
 
-// ===== ตัวแปรเกม =====
-let hp=100, ammo=30, maxAmmo=30;
-let reloadTime=0, isReloading=false;
-let timeLeft=60;
-let gameRunning=false;
+// ===== GAME VAR =====
+let hp = 100;
+let ammo = 30;
+let maxAmmo = 30;
+let reloadTime = 0;
+let isReloading = false;
+let timeLeft = 60;
+let gameRunning = false;
 
-let zombies=[];
+let zombies = [];
+let bossSpawned = false;
 
-// ===== เสียง =====
+// ===== SOUND =====
 let shootSound = new Audio("https://cdn.pixabay.com/audio/2022/03/15/audio_115b9bfa1c.mp3");
 
-// ===== สร้างมอน =====
+// ===== SPAWN =====
 function spawnZombie(boss=false){
-  let geo = new THREE.BoxGeometry(boss?2:1,boss?2:1,boss?2:1);
+  let geo = new THREE.BoxGeometry(boss?3:2,boss?3:2,boss?3:2);
   let mat = new THREE.MeshPhongMaterial({color:boss?0xff0000:0x00ff00});
   let z = new THREE.Mesh(geo,mat);
 
-  z.position.set((Math.random()-0.5)*10,1,-20);
-  z.hp = boss?30:5;
-  z.speed = boss?0.03:0.05;
+  z.position.set((Math.random()-0.5)*20,1,-30);
+  z.hp = boss?50:5;
+  z.speed = boss?0.03:0.06;
+  z.isBoss = boss;
 
   scene.add(z);
   zombies.push(z);
 }
 
-// ===== ยิง =====
+// ===== BULLET EFFECT =====
+function bulletEffect(){
+  let geo = new THREE.CylinderGeometry(0.05,0.05,6);
+  let mat = new THREE.MeshBasicMaterial({color:0xffff00});
+  let bullet = new THREE.Mesh(geo,mat);
+
+  bullet.rotation.x = Math.PI/2;
+  bullet.position.copy(camera.position);
+
+  scene.add(bullet);
+  setTimeout(()=>scene.remove(bullet),100);
+}
+
+// ===== SHOOT =====
 function shoot(){
   if(!gameRunning || ammo<=0 || isReloading) return;
-  ammo--;
 
+  ammo--;
   shootSound.currentTime=0;
   shootSound.play();
+  bulletEffect();
 
   let ray = new THREE.Raycaster();
-  ray.setFromCamera(new THREE.Vector2(0,0),camera);
-  let hit = ray.intersectObjects(zombies);
+  ray.setFromCamera({x:0,y:0}, camera);
+
+  let hit = ray.intersectObjects(zombies,false);
 
   if(hit.length>0){
     let z = hit[0].object;
     z.hp -= 2;
 
-    if(z.hp<=0){
+    if(z.hp <= 0){
       scene.remove(z);
       zombies.splice(zombies.indexOf(z),1);
     }
   }
 }
 
-// ===== รีโหลด =====
+// ===== RELOAD =====
 function reload(){
   if(isReloading || ammo===maxAmmo) return;
-  isReloading=true;
-  reloadTime=0;
+  isReloading = true;
+  reloadTime = 0;
 }
 
-// ===== ปุ่ม =====
-document.getElementById("shoot").onclick=shoot;
-document.getElementById("reload").onclick=reload;
-document.getElementById("start").onclick=()=>gameRunning=true;
-document.getElementById("pause").onclick=()=>gameRunning=false;
+// ===== BUTTON =====
+document.getElementById("shoot").onclick = shoot;
+document.getElementById("reload").onclick = reload;
+document.getElementById("start").onclick = ()=>gameRunning=true;
+document.getElementById("pause").onclick = ()=>gameRunning=false;
 
-// ===== เล็ง =====
+// ===== LOOK =====
 let lastX=0, touching=false;
 document.addEventListener("touchstart",e=>{
-  touching=true; lastX=e.touches[0].clientX;
+  touching=true;
+  lastX=e.touches[0].clientX;
 });
 document.addEventListener("touchmove",e=>{
   if(!touching) return;
   let dx=e.touches[0].clientX-lastX;
-  camera.rotation.y-=dx*0.005;
+  camera.rotation.y -= dx*0.005;
   lastX=e.touches[0].clientX;
 });
 document.addEventListener("touchend",()=>touching=false);
 
-// ===== loop =====
-setInterval(()=>{ if(gameRunning && timeLeft>0) timeLeft--; },1000);
+// ===== TIMER =====
+setInterval(()=>{
+  if(gameRunning && timeLeft>0){
+    timeLeft--;
+  }
+},1000);
 
+// ===== LOOP =====
 function animate(){
 requestAnimationFrame(animate);
 
+// 🔥 ล็อคกันตก
+camera.position.y = 1.6;
+
 if(gameRunning){
 
-  // spawn
-  if(Math.random()<0.02) spawnZombie();
-
-  // บอสตอนท้าย
-  if(timeLeft===10 && zombies.length<3){
-    spawnZombie(true);
+  // spawn ปกติ
+  if(Math.random()<0.02){
+    spawnZombie();
   }
 
-  // เดิน
+  // บอสตอนท้าย
+  if(timeLeft <= 10 && !bossSpawned){
+    spawnZombie(true);
+    bossSpawned = true;
+  }
+
+  // zombie เดิน
   zombies.forEach(z=>{
     z.lookAt(camera.position);
     z.position.z += z.speed;
 
-    if(z.position.z>4){
-      hp-=5;
-      z.position.z=-20;
+    if(z.position.z > 4){
+      hp -= z.isBoss ? 15 : 5;
+      z.position.z = -30;
     }
   });
 
   // reload cooldown
   if(isReloading){
     reloadTime += 0.02;
-    if(reloadTime>=1){
-      ammo=maxAmmo;
-      isReloading=false;
+    if(reloadTime >= 1){
+      ammo = maxAmmo;
+      isReloading = false;
     }
   }
 }
 
-// UI
+// ===== UI =====
 document.getElementById("ui").innerText =
 "HP:"+hp+
 " Ammo:"+ammo+
-(isReloading?" Reloading "+Math.floor(reloadTime*100)+"%":"")+
-" Time:"+timeLeft;
+(isReloading?" Reload "+Math.floor(reloadTime*100)+"%":"")+
+" Time:"+timeLeft+
+(bossSpawned?" BOSS!":"");
 
 renderer.render(scene,camera);
 }
 animate();
+
 </script>
 </body>
 </html>
