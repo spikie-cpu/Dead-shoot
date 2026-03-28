@@ -2,91 +2,143 @@
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Dead Shoot 3D</title>
+<title>Dead Shoot</title>
 <style>
 body { margin:0; overflow:hidden; background:black; }
-#ui {
-  position:fixed; color:white; font-family:sans-serif;
-  top:10px; left:10px;
-}
+#ui { position:fixed; top:10px; left:10px; color:white; font-family:sans-serif; }
 #crosshair {
-  position:fixed;
-  top:50%; left:50%;
-  width:10px; height:10px;
-  background:white;
+  position:fixed; top:50%; left:50%;
+  width:10px; height:10px; background:white;
   transform:translate(-50%,-50%);
 }
-#shootBtn, #reloadBtn {
+button {
   position:fixed; bottom:20px;
-  padding:15px;
-  background:red; color:white; border:none;
+  padding:15px; background:red; color:white; border:none;
 }
-#shootBtn { right:20px; }
-#reloadBtn { right:120px; }
+#shoot { right:20px; }
+#reload { right:120px; }
 </style>
 </head>
 
 <body>
 <div id="ui">HP: 100 | Ammo: 10</div>
 <div id="crosshair"></div>
-<button id="shootBtn">SHOOT</button>
-<button id="reloadBtn">RELOAD</button>
+<button id="shoot">SHOOT</button>
+<button id="reload">RELOAD</button>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script>
 
-// scene
+<script>
+// ====== SCENE ======
 let scene = new THREE.Scene();
 let camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1000);
 let renderer = new THREE.WebGLRenderer();
 renderer.setSize(innerWidth, innerHeight);
 document.body.appendChild(renderer.domElement);
 
-// player
 camera.position.z = 5;
+
 let hp = 100;
 let ammo = 10;
 
-// zombies
+// ====== ZOMBIES ======
 let zombies = [];
+
+function createHealthBar(z) {
+  let canvas = document.createElement("canvas");
+  canvas.width = 128;
+  canvas.height = 32;
+  let ctx = canvas.getContext("2d");
+
+  let texture = new THREE.CanvasTexture(canvas);
+  let material = new THREE.SpriteMaterial({ map: texture });
+  let sprite = new THREE.Sprite(material);
+  sprite.scale.set(2, 0.5, 1);
+
+  z.add(sprite);
+  sprite.position.y = 1.5;
+
+  z.hpBar = { canvas, ctx, texture };
+}
+
+function updateHealthBar(z) {
+  let ctx = z.hpBar.ctx;
+  ctx.clearRect(0,0,128,32);
+
+  ctx.fillStyle = "red";
+  ctx.fillRect(0,0,128,32);
+
+  ctx.fillStyle = "green";
+  ctx.fillRect(0,0,128*(z.hp/5),32);
+
+  z.hpBar.texture.needsUpdate = true;
+}
 
 function spawnZombie(){
   let geo = new THREE.BoxGeometry(1,1,1);
   let mat = new THREE.MeshBasicMaterial({color:0x00ff00});
   let z = new THREE.Mesh(geo, mat);
+
   z.position.set((Math.random()-0.5)*10,0,-20);
-  z.hp = 3;
+  z.hp = 5;
+
+  createHealthBar(z);
+  updateHealthBar(z);
+
   scene.add(z);
   zombies.push(z);
 }
 setInterval(spawnZombie,2000);
 
-// ยิง
+// ====== BULLET EFFECT ======
+function bulletEffect(){
+  let geo = new THREE.CylinderGeometry(0.02,0.02,5);
+  let mat = new THREE.MeshBasicMaterial({color:0xffff00});
+  let bullet = new THREE.Mesh(geo, mat);
+
+  bullet.rotation.x = Math.PI/2;
+  bullet.position.copy(camera.position);
+
+  scene.add(bullet);
+
+  setTimeout(()=>scene.remove(bullet),100);
+}
+
+// ====== SHOOT ======
 function shoot(){
   if(ammo <= 0) return;
   ammo--;
 
-  zombies.forEach((z,i)=>{
-    if(Math.abs(z.position.x) < 1){
-      z.hp--;
-      if(z.hp<=0){
-        scene.remove(z);
-        zombies.splice(i,1);
-      }
+  bulletEffect();
+
+  let raycaster = new THREE.Raycaster();
+  raycaster.setFromCamera(new THREE.Vector2(0,0), camera);
+
+  let intersects = raycaster.intersectObjects(zombies);
+
+  if(intersects.length > 0){
+    let z = intersects[0].object;
+    z.hp--;
+
+    updateHealthBar(z);
+
+    if(z.hp <= 0){
+      scene.remove(z);
+      zombies.splice(zombies.indexOf(z),1);
     }
-  });
+  }
 }
 
-// รีโหลด
+// ====== RELOAD ======
 function reload(){
   ammo = 10;
 }
 
-// ปุ่ม
-document.getElementById("shootBtn").onclick = shoot;
-document.getElementById("reloadBtn").onclick = reload;
+// ====== CONTROLS ======
+document.getElementById("shoot").onclick = shoot;
+document.getElementById("reload").onclick = reload;
 
-// เล็ง (ลากจอ)
+// ====== LOOK CONTROL ======
 let isTouch = false;
 let lastX = 0;
 
@@ -104,11 +156,12 @@ document.addEventListener("touchmove", e=>{
 
 document.addEventListener("touchend", ()=> isTouch=false);
 
-// loop
+// ====== GAME LOOP ======
 function animate(){
   requestAnimationFrame(animate);
 
   zombies.forEach(z=>{
+    z.lookAt(camera.position);
     z.position.z += 0.05;
 
     if(z.position.z > 4){
